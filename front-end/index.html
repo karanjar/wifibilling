@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Get online</title>
+<style>
+:root{--bg:#e9eff1;--ink:#14212b;--mute:#5b6b76;--green:#0b7a4b;--green-d:#075c38;--ticket:#ffffff;--stub:#ffd24a;--line:#cfd9de;--bad:#b3261e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:440px;margin:0 auto;padding:22px 16px 48px}
+h1{font-size:1.9rem;line-height:1.1;margin:8px 0 4px;letter-spacing:-.02em}
+.sub{color:var(--mute);margin:0 0 20px}
+.status{background:var(--green);color:#fff;border-radius:12px;padding:14px 16px;margin-bottom:18px}
+.status b{display:block;font-size:1.5rem;font-variant-numeric:tabular-nums}
+.status button{margin-top:10px;background:#fff;color:var(--green-d)}
+.tickets{display:grid;gap:12px;margin:0;padding:0;list-style:none}
+.ticket{display:grid;grid-template-columns:1fr auto;width:100%;text-align:left;border:2px solid transparent;border-radius:10px;background:var(--ticket);padding:0;cursor:pointer;color:inherit;font:inherit;overflow:hidden}
+.ticket:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid #1b6fd1;outline-offset:2px}
+.ticket[aria-pressed=true]{border-color:var(--green)}
+.t-main{padding:13px 16px}
+.t-main strong{display:block;font-size:1.15rem}
+.t-main span{color:var(--mute);font-size:.9rem}
+.t-stub{background:var(--stub);padding:13px 16px;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:96px;border-left:2px dashed #b9902a;position:relative}
+.t-stub::before,.t-stub::after{content:"";position:absolute;left:-9px;width:16px;height:16px;border-radius:50%;background:var(--bg)}
+.t-stub::before{top:-8px}.t-stub::after{bottom:-8px}
+.t-stub small{font-size:.7rem;color:#5a4506}
+.t-stub b{font-size:1.4rem;line-height:1}
+.panel{margin-top:18px;background:var(--ticket);border-radius:12px;padding:16px}
+label{display:block;font-weight:600;margin-bottom:6px}
+input{width:100%;font:inherit;padding:12px;border:2px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:13px 16px;cursor:pointer;background:var(--green);color:#fff;width:100%}
+button:hover{background:var(--green-d)}button[disabled]{opacity:.55;cursor:default}
+.hint{color:var(--mute);font-size:.88rem;margin:8px 0 14px}
+.msg{margin-top:12px;padding:11px 13px;border-radius:8px;background:#eef6f1}
+.msg.err{background:#fbeceb;color:var(--bad)}
+details{margin-top:22px}
+summary{cursor:pointer;font-weight:600;padding:6px 0}
+.row{display:flex;gap:8px}.row button{width:auto}
+.hidden{display:none}
+.dots::after{content:"";animation:d 1.2s steps(4) infinite}
+@keyframes d{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+@media (prefers-reduced-motion:reduce){.dots::after{animation:none;content:"..."}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Get online</h1>
+  <p class="sub">Pick a time pass and pay with M&#8209;Pesa. You&#8217;re connected as soon as the payment goes through.</p>
+
+  <div id="status" class="status hidden" role="status"></div>
+
+  <ul id="plans" class="tickets" aria-label="Time passes"><li class="sub">Loading passes<span class="dots"></span></li></ul>
+
+  <section id="pay" class="panel hidden" aria-live="polite">
+    <p id="chosen" style="margin-top:0;font-weight:700"></p>
+    <label for="phone">M&#8209;Pesa phone number</label>
+    <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="07XX XXX XXX">
+    <p class="hint">You&#8217;ll get a prompt on this phone to enter your M&#8209;Pesa PIN.</p>
+    <button id="payBtn">Pay with M&#8209;Pesa</button>
+    <div id="payMsg" class="msg hidden"></div>
+  </section>
+
+  <details>
+    <summary>Have a voucher code?</summary>
+    <div class="panel">
+      <label for="code">Voucher code</label>
+      <div class="row">
+        <input id="code" autocapitalize="characters" autocomplete="off" placeholder="e.g. K7M2QX9TPA">
+        <button id="redeemBtn">Redeem</button>
+      </div>
+      <div id="vMsg" class="msg hidden"></div>
+    </div>
+  </details>
+
+  <details id="macBox" class="hidden">
+    <summary>Device address</summary>
+    <div class="panel">
+      <label for="mac">Device MAC address</label>
+      <input id="mac" placeholder="AA:BB:CC:DD:EE:FF">
+      <p class="hint">Normally filled in by the router. Enter it only when testing.</p>
+    </div>
+  </details>
+</main>
+
+<script>
+const API = "/api/v1";
+const qs = new URLSearchParams(location.search);
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+// MikroTik passes the device MAC as ?mac=; keep it if the page reloads.
+let mac = (qs.get("mac") || sessionStorage.getItem("mac") || "").toUpperCase().replace(/-/g, ":");
+if (mac) sessionStorage.setItem("mac", mac); else $("macBox").classList.remove("hidden");
+$("mac").value = mac;
+$("mac").addEventListener("input", e => { mac = e.target.value.trim().toUpperCase().replace(/-/g, ":"); sessionStorage.setItem("mac", mac); checkSession(); });
+
+let chosen = null, timer = null, countdown = null;
+
+const dur = m => m % 10080 === 0 ? `${m/10080} week${m/10080>1?"s":""}` : m % 1440 === 0 ? `${m/1440} day${m/1440>1?"s":""}` : m % 60 === 0 ? `${m/60} hour${m/60>1?"s":""}` : `${m} min`;
+const speed = k => k ? `${(k/1024).toFixed(k%1024?1:0)} Mbps` : "Full speed";
+const data = mb => mb ? (mb >= 1024 ? `${(mb/1024).toFixed(1)} GB` : `${mb} MB`) : "Unlimited data";
+
+async function api(path, opts) {
+  const r = await fetch(API + path, opts);
+  let body = {}; try { body = await r.json(); } catch {}
+  if (!r.ok) throw new Error(body.error || "Something went wrong. Try again.");
+  return body;
+}
+const post = (path, data) => api(path, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data)});
+
+function show(el, text, err) { el.textContent = text; el.className = "msg" + (err ? " err" : ""); }
+
+async function loadPlans() {
+  try {
+    const plans = await api("/plans");
+    const ul = $("plans");
+    if (!plans.length) { ul.innerHTML = '<li class="sub">No passes are available right now.</li>'; return; }
+    ul.innerHTML = "";
+    plans.forEach(p => {
+      const li = document.createElement("li");
+      li.innerHTML = `<button class="ticket" aria-pressed="false">
+        <span class="t-main"><strong>${esc(p.name)}</strong><span>${esc(dur(p.duration_minutes))} &middot; ${esc(speed(p.down_kbps))} &middot; ${esc(data(p.data_limit_mb))}</span></span>
+        <span class="t-stub"><small>KES</small><b>${esc(p.price_kes)}</b></span></button>`;
+      li.firstChild.onclick = () => choose(p, li.firstChild);
+      ul.appendChild(li);
+    });
+  } catch (e) { $("plans").innerHTML = `<li class="msg err">Couldn&#8217;t load passes. ${esc(e.message)}</li>`; }
+}
+
+function choose(p, btn) {
+  chosen = p;
+  document.querySelectorAll(".ticket").forEach(b => b.setAttribute("aria-pressed", b === btn));
+  $("chosen").textContent = `${p.name}: KES ${p.price_kes} for ${dur(p.duration_minutes)}`;
+  $("pay").classList.remove("hidden");
+  $("payMsg").className = "msg hidden";
+  $("phone").focus();
+  $("pay").scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+
+$("payBtn").onclick = async () => {
+  if (!chosen) return;
+  if (!mac) return show($("payMsg"), "We couldn’t detect your device. Reconnect to the WiFi and reopen this page.", true);
+  const btn = $("payBtn");
+  btn.disabled = true;
+  show($("payMsg"), "Sending the payment request to your phone…");
+  try {
+    const r = await post("/pay/mpesa", {plan_id: chosen.id, phone: $("phone").value, mac});
+    show($("payMsg"), "Enter your M‑Pesa PIN on your phone. Waiting for confirmation…");
+    poll(r.checkout_request_id);
+  } catch (e) { show($("payMsg"), e.message, true); btn.disabled = false; }
+};
+
+function poll(id) {
+  let tries = 0;
+  clearInterval(timer);
+  timer = setInterval(async () => {
+    tries++;
+    try {
+      const s = await api("/pay/status/" + encodeURIComponent(id));
+      if (s.status === "completed") { clearInterval(timer); $("payBtn").disabled = false; show($("payMsg"), "Payment received. You’re online."); checkSession(); }
+      else if (s.status === "failed") { clearInterval(timer); $("payBtn").disabled = false; show($("payMsg"), s.message ? `Payment didn’t go through: ${s.message}.` : "Payment didn’t go through. Check your balance and try again.", true); }
+    } catch {}
+    if (tries >= 40) { clearInterval(timer); $("payBtn").disabled = false; show($("payMsg"), "We didn’t get a confirmation. If M‑Pesa charged you, reload this page in a minute.", true); }
+  }, 3000);
+}
+
+$("redeemBtn").onclick = async () => {
+  const code = $("code").value.trim();
+  if (!code) return show($("vMsg"), "Enter your voucher code.", true);
+  if (!mac) return show($("vMsg"), "We couldn’t detect your device. Reconnect to the WiFi and reopen this page.", true);
+  try { await post("/voucher/redeem", {code, mac}); show($("vMsg"), "Voucher redeemed. You’re online."); checkSession(); }
+  catch (e) { show($("vMsg"), e.message, true); }
+};
+
+function fmt(sec) {
+  const h = Math.floor(sec/3600), m = Math.floor(sec%3600/60), s = sec%60;
+  return (h ? h + "h " : "") + String(m).padStart(h?2:1,"0") + "m " + String(s).padStart(2,"0") + "s";
+}
+
+async function checkSession() {
+  clearInterval(countdown);
+  const box = $("status");
+  if (!mac) return box.classList.add("hidden");
+  try {
+    const s = await api("/session?mac=" + encodeURIComponent(mac));
+    if (!s.active) return box.classList.add("hidden");
+    let left = s.remaining_seconds;
+    const dest = qs.get("link-orig") || qs.get("continue");
+    box.innerHTML = `You&#8217;re online<b id="left"></b>time left` + (dest ? `<button id="go">Start browsing</button>` : "");
+    box.classList.remove("hidden");
+    if (dest) $("go").onclick = () => location.href = dest;
+    const tick = () => { $("left").textContent = fmt(Math.max(left, 0)); if (left-- <= 0) { clearInterval(countdown); checkSession(); } };
+    tick(); countdown = setInterval(tick, 1000);
+  } catch { box.classList.add("hidden"); }
+}
+
+loadPlans();
+checkSession();
+</script>
+</body>
+</html>
