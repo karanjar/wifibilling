@@ -116,3 +116,5 @@ func seed(db *gorm.DB, cfg *config.Config) {
 		})
 	}
 }
+
+//good start for me
